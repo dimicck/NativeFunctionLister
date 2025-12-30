@@ -4,9 +4,19 @@ from typing import List, Optional, Set
 from elftools.elf.elffile import ELFFile
 
 def _extract_name(name: str) -> str:
+    """
+    Strip GNU symbol version suffixes.
+    """
     return name.split("@", 1)[0]
 
 def _is_exported_func(sym) -> bool:
+    """
+      Check if ELF symbol represents an exported, callable function.
+      - Defined in this binary (not imported / SHN_UNDEF)
+      - Function symbol (STT_FUNC)
+      - Globally visible or weak
+      - Visible to the dynamic loader (DEFAULT or PROTECTED)
+      """
     return (
         sym["st_shndx"] != "SHN_UNDEF"
         and sym["st_info"]["type"] == "STT_FUNC"
@@ -23,9 +33,12 @@ def list_native_functions(file_path: str) -> List[str]:
 
     functions: Set[str] = set()
 
+
+    # Parse the ELF binary, reflects runtime symbol availability
     with open(file_path, "rb") as f:
         elf = ELFFile(f)
 
+        # Get symbols available to the dynamic loader
         sec = elf.get_section_by_name(".dynsym")
         if sec is None:
             return []
@@ -34,9 +47,10 @@ def list_native_functions(file_path: str) -> List[str]:
             if not _is_exported_func(sym):
                 continue
 
+            # Normalize the symbol name
             name = _extract_name(sym.name or "")
 
-            # keep only unmangled functions (C / extern "C" C++)
+            # Keep only unmangled names - C and C++ functions exported with extern "C"
             if not name or name.startswith("_Z"):
                 continue
 
@@ -45,6 +59,14 @@ def list_native_functions(file_path: str) -> List[str]:
     return sorted(functions)
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """
+    Command-line entry point.
+
+    Prints exported function names.
+    Returns:
+        0 on success
+        2 on error
+    """
     import argparse
     import sys
 
